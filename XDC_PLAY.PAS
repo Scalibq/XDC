@@ -27,7 +27,8 @@ uses
   cmdlin,      {for parsing command-line options}
   tinterrupts, {8253 manipulation routines}
   dos,         {for getintvec/setintvec}
-  soundlib;    {Sound Blaster detection/setup/init/teardown code}
+  soundlib,    {Sound Blaster detection/setup/init/teardown code}
+  pcspkr;      {PC speaker routines for PWM playback}
 
 const
   {samplerate:word=22050;}
