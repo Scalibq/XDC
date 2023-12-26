@@ -73,6 +73,7 @@ var
   playp:pointer;
   AVRing:TSlabRing;
   fname:string;
+  cvxPort:word;
 
 procedure userTickHandler; interrupt;
 begin
@@ -97,8 +98,9 @@ begin
         db '  <filename> is the video to play',0dh,0ah
         db '  /? or /h   This help',0dh,0ah
         db '  /q         Quiet -- do not attempt to use a sound card',0dh,0ah
-        db '  /pcspkr    Use PC speaker output',0d0h,0ah
-        db '  /cvx<port> Use Covox on <port>',0dh,0ah
+        db '  /w         Use PC speaker output',0d0h,0ah
+        db '  /c<port>   Use Covox on <port>',0dh,0ah
+        db '  /s         Use Sound Blaster',0dh,0ah
         db '  /kN        How much KB to read in a single operation',0dh,0ah
         db '  /p         Presentation mode (no messages, stay in graphics mode)',0dh,0ah
         db '  /d         Displays queue depth indicator',0dh,0ah
@@ -117,18 +119,39 @@ end;
 Procedure prepPlayer;
 var
   l:longint;
+  p:string;
 begin
   {handle user input}
   if (paramcount=0) or is_Param('h') or is_Param('?') then printHelp;
   if is_param('p') then presenting:=true;
   if is_param('d') then showpip:=true;
-  if is_param('q') then begin
-    sndDev:=SD_None;
-    if not presenting then writeln('User requested silence; using system timer instead of soundcard.');
+  if is_param('q') then sndDev:=SD_None;
+  if is_param('w') then sndDev:=SD_PCSpkr;
+  if is_param('c') then
+  begin
+   sndDev:=SD_Covox;
+   p:=Param_Text('c');
+   cvxPort:=StrToInt('$'+p);
   end;
+  if is_param('s') then sndDev:=SD_SB;
   if is_param('k') then minDiskRead:=param_int('k');
   if non_flag_count>0 then fname:=non_flag_param(1);
   if not fileexists(fname) then fatalerror(1,'Filename "'+fname+'" not found');
+
+  {Print information on selected audio device}
+  if not presenting then
+  begin
+    case (sndDev) of
+      SD_None:
+        writeln('User requested silence; using system timer instead of soundcard.');
+      SD_PCSpkr:
+        writeln('Using PWM sample playback on PC speaker.');
+      SD_Covox:
+        writeln('Using Covox on port ' + hexword(cvxPort) + '.');
+      SD_SB:
+        writeln('Using Sound Blaster.');
+    end;
+  end;
 
   f.init(fname,stOpenRead);
   if f.status<>stOK then fatalerror(2,'Problem opening media file: '+fname);
