@@ -6,7 +6,7 @@ uses TInterrupts;
 
 const
 	PPIPortB = $61;
-        Chan2Port = $42;
+	Chan2Port = $42;
 
 procedure InitPCspkrPWM;
 procedure ResetPCSpkr;

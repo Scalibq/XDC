@@ -26,6 +26,7 @@ uses
   support,     {basic support stuff I don't want to include CRT for}
   cmdlin,      {for parsing command-line options}
   tinterrupts, {8253 manipulation routines}
+  I8259A,      {8259A manipulation routines}
   dos,         {for getintvec/setintvec}
   soundlib,    {Sound Blaster detection/setup/init/teardown code}
   pcspkr;      {PC speaker routines for PWM playback}
