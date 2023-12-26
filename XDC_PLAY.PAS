@@ -31,6 +31,13 @@ uses
   soundlib,    {Sound Blaster detection/setup/init/teardown code}
   pcspkr;      {PC speaker routines for PWM playback}
 
+type
+  SoundDevice = (
+    SD_None,
+    SD_PCSpkr,
+    SD_Covox,
+    SD_SB);
+
 const
   {samplerate:word=22050;}
   maxsamplerate=45454;   {this is the maximum the Soundblaster Pro/2.0 can do}
@@ -45,7 +52,7 @@ const
   DataQueued:boolean=false; {If FALSE, then playback pauses while more
                             data is buffered from disk}
   numPauses:word=0;
-  quiet:boolean=false;
+  sndDev:SoundDevice=SD_None;
   presenting:boolean=false;
   showpip:boolean=false;
   curPlayPacket:word=0;
@@ -90,6 +97,8 @@ begin
         db '  <filename> is the video to play',0dh,0ah
         db '  /? or /h   This help',0dh,0ah
         db '  /q         Quiet -- do not attempt to use a sound card',0dh,0ah
+        db '  /pcspkr    Use PC speaker output',0d0h,0ah
+        db '  /cvx<port> Use Covox on <port>',0dh,0ah
         db '  /kN        How much KB to read in a single operation',0dh,0ah
         db '  /p         Presentation mode (no messages, stay in graphics mode)',0dh,0ah
         db '  /d         Displays queue depth indicator',0dh,0ah
@@ -114,7 +123,7 @@ begin
   if is_param('p') then presenting:=true;
   if is_param('d') then showpip:=true;
   if is_param('q') then begin
-    quiet:=true;
+    sndDev:=SD_None;
     if not presenting then writeln('User requested silence; using system timer instead of soundcard.');
   end;
   if is_param('k') then minDiskRead:=param_int('k');
@@ -195,7 +204,7 @@ var
   audioHp:pointer;    {pointer to audio}
 
 begin
-  if not quiet then begin
+  if sndDev = SD_SB then begin
     sndbufp:=play.p; {point to dma buffer}
     if play.activeblock = 2 {If in one half, advance to the second half}
       then inc(word(sndbufp),header.achunksize);
@@ -221,7 +230,7 @@ begin
     {get a handle to the packet}
     frameHp:=AVRing.retrieve;
     {get a handle to the audio data inside the packet}
-    if not quiet then begin
+    if sndDev = SD_SB then begin
       audioHp:=frameHp;
       inc(word(audioHp),(packetIndex^[curPlayPacket]*512)-header.achunksize);
       asm
@@ -241,7 +250,7 @@ begin
         inc     curPlayPacket
     end;
   {if we are NOT allowed to pull AV from the FIFO queue:}
-  end else if not quiet then begin
+  end else if sndDev = SD_SB then begin
     asm
         les     di,sndbufp
         cld
@@ -394,12 +403,12 @@ Procedure shutItDown;
 begin
   SetIntVec($01C,Int1CSave); {stop counting ticks}
 {$IFDEF HP95LX}
-  if not quiet
+  if sndDev = SD_SB
     then exitplay; {shutdown Sound Blaster}
 {$ELSE}
-  if quiet
+  if sndDev <> SD_SB
     then CleanUpTimer {stop our internal "sound" handler}
-    else exitplay; {shutdown Sound Blaster}
+  else exitplay; {shutdown Sound Blaster}
 {$ENDIF}
 
   if not presenting then begin
@@ -440,7 +449,7 @@ end;
 
 begin
   prepPlayer;
-  if quiet
+  if sndDev = SD_None
 {$IFDEF HP95LX}
     then primeNoCard95LX
 {$ELSE}
