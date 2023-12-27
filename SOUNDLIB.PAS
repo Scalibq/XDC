@@ -1259,18 +1259,19 @@ BEGIN
   intrunning := TRUE;
   {$ENDIF}
   {acknowledge the Sound Blaster:}
-  IF blaster.version >= sb16 THEN BEGIN
+  IF blaster.version < sb20 THEN BEGIN
+     writedsp ($14);
+     writedsp (LO (play.blocksize - 1) );
+     writedsp (HI (play.blocksize - 1) );
+     h := port [blaster.address + $E];
+    END
+  ELSE IF blaster.version >= sb16 THEN BEGIN
     h := readmixer ($82);
     IF h AND 1 <> 0
       THEN h := port [blaster.address + $E]
       ELSE h := port [blaster.address + $F];
   end else begin {not sb16, so do this instead:}
     h := port [blaster.address + $E];
-	IF blaster.version < sb20 THEN BEGIN
-	 writedsp ($14);
-     writedsp (LO (play.blocksize - 1) );
-     writedsp (HI (play.blocksize - 1) );
-	END;
   end;
   {$IFDEF REENTRANT}
   IF NOT run THEN {If interrupts overlap, the machine may hang!}
@@ -2168,7 +2169,7 @@ BEGIN
      writedsp ($14);
      writedsp (LO (size - 1) );
      writedsp (HI (size - 1) );
-     END;  
+     END;
 END;
 
 
