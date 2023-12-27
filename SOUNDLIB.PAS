@@ -188,6 +188,7 @@ CONST
   sbpro              = $300;
   sb21               = $210;
   sb20               = $200;
+  sb10               = $100;
   actfile            : BYTE = 0;{ the momently used file }
 
   { Constants for the dma-port-addresses }
@@ -1265,6 +1266,11 @@ BEGIN
       ELSE h := port [blaster.address + $F];
   end else begin {not sb16, so do this instead:}
     h := port [blaster.address + $E];
+	IF blaster.version < sb20 THEN BEGIN
+	 writedsp ($14);
+     writedsp (LO (play.blocksize - 1) );
+     writedsp (HI (play.blocksize - 1) );
+	END;
   end;
   {$IFDEF REENTRANT}
   IF NOT run THEN {If interrupts overlap, the machine may hang!}
@@ -1535,7 +1541,7 @@ BEGIN
      blaster.version := i;
   {for any tests with lower blaster versions, change here the version}
   {  blaster.version := sbpro;}
-  IF blaster.version < sb20 THEN
+  IF blaster.version < sb10 THEN
      BEGIN        {blasters lower than version }
      initblaster := sb_notsupported;           {2.0 aren't supported because}
      EXIT;                                     {they cannot run the autoinit}
@@ -2140,7 +2146,7 @@ BEGIN
      writedsp (HI (size - 1) );
      writedsp ($90);
      END
-  ELSE
+  ELSE IF (blaster.version >= sb20) THEN
      BEGIN {sb20 or higher, mono and sr <=23000}
      writedsp ($D1);
      initdma (blaster.lodma, play.p, size SHL 1, FALSE, TRUE);
@@ -2151,7 +2157,18 @@ BEGIN
      writedsp (LO (size - 1) );
      writedsp (HI (size - 1) );
      writedsp ($1C);
-     END;
+     END
+  ELSE
+     BEGIN {sb1x, mono and sr <=23000}
+     writedsp ($D1);
+     initdma (blaster.lodma, play.p, size SHL 1, FALSE, TRUE);
+     setsamplingrate (play.data [datanum] .frequency);
+     IF play.data [datanum] .stereo THEN
+        writemixer ($0E, readmixer ($0E) OR $20);
+     writedsp ($14);
+     writedsp (LO (size - 1) );
+     writedsp (HI (size - 1) );
+     END;  
 END;
 
 
