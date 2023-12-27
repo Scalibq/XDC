@@ -311,9 +311,9 @@ end;
 Procedure jrInitAudio;
 begin
   asm
-    in      al,SNMplxr
-    or      al,01100000b {set bits 6 and 5 to route SN audio through multiplexor}
-    out     SNMplxr,al
+    { Audio Multiplexer is Int1A AH=80 AL=Audio source (0=PC speaker, 1=Cassette, 2=I/O channel "Audio In", 3=SN76496) }
+    mov ax, $8003
+    int $1A
   end;
 end;
 
@@ -393,9 +393,9 @@ begin
   for chan:=0 to 3 do jrSetAudio(chan,440,0);
   {Reset the multiplexor}
   asm
-    in      al,SNMplxr
-    and     al,10011100b {clear 6 and 5 to route PC speaker through multiplexor; 1 and 0 turn off timer signal}
-    out     SNMplxr,al
+    { Audio Multiplexer is Int1A AH=80 AL=Audio source (0=PC speaker, 1=Cassette, 2=I/O channel "Audio In", 3=SN76496) }
+    mov ax, $8000
+    int $1A
   end;
 end;
 
