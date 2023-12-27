@@ -74,6 +74,11 @@ var
   AVRing:TSlabRing;
   fname:string;
   cvxPort:word;
+  mt:MachineType;
+  samples:word;
+  frameInterval:word;
+  audio:^byte;
+  strans: array [0..255] of byte;
 
 procedure userTickHandler; interrupt;
 begin
@@ -87,6 +92,21 @@ begin
   play.callproc;
 end;
 {$ENDIF}
+
+procedure BuildTrans(rate:word);
+var
+  i: word;
+  scale: word;
+  s: real;
+begin
+  scale := (PITFREQ div rate) - 2;
+
+  for i := 0 to 255 do
+  begin
+    s := i / 255.0;
+    strans[i] := 1 + trunc(s * scale);
+  end;
+end;
 
 Procedure PrintHelp;
 begin
@@ -147,7 +167,7 @@ begin
       SD_PCSpkr:
         writeln('Using PWM sample playback on PC speaker.');
       SD_Covox:
-        writeln('Using Covox on port ' + hexword(cvxPort) + '.');
+        writeln('Using Covox on port ' + hex(cvxPort) + '.');
       SD_SB:
         writeln('Using Sound Blaster.');
     end;
@@ -253,9 +273,14 @@ begin
     {get a handle to the packet}
     frameHp:=AVRing.retrieve;
     {get a handle to the audio data inside the packet}
+    audioHp:=frameHp;
+    inc(word(audioHp),(packetIndex^[curPlayPacket]*512)-header.achunksize);
+    audio := audioHp;
+
+	{enable interrupts at this point}
+	asm sti end;
+
     if sndDev = SD_SB then begin
-      audioHp:=frameHp;
-      inc(word(audioHp),(packetIndex^[curPlayPacket]*512)-header.achunksize);
       asm
         mov     dx,ds
         les     di,sndbufp
@@ -392,12 +417,11 @@ end;
 
 {$F+}
 procedure noSoundIntCaller; Interrupt;
-
 begin
   play.callproc;
 
   {We want to be nice, and will maintain the BIOS interrupt}
-  inc(PITCycles,Chan0Counter); {Keep track of how many PIT cycles have gone by}
+  inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
   if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
     longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
     asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
@@ -406,12 +430,88 @@ begin
   else
     Port[$20] := $20; {send EndOfInterrupt to the PIC to ackn. the interrupt}
 end;
+
+procedure pwmSoundIntCaller; Interrupt;
+var
+  sample:byte;
+begin
+  {output one sample to PC speaker}
+  sample := audio^;
+  port[Chan2Port] := strans[sample];
+  inc(audio);
+
+  dec(samples);
+  if samples = 0 then
+  begin
+    samples := header.achunksize;
+    play.callproc;
+	
+    {We want to be nice, and will maintain the BIOS interrupt}
+    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
+    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
+      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
+      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
+      BIOSTimerHandler; {this will acknowledge the interrupt}
+    end
+  end;
+end;
+
+procedure cvxSoundIntCaller; Interrupt;
+begin
+  {output one sample to Covox via printer port}
+  port[cvxPort] := audio^;
+  inc(audio);
+
+  dec(samples);
+  if samples = 0 then
+  begin
+    samples := header.achunksize;
+    play.callproc;
+	
+    {We want to be nice, and will maintain the BIOS interrupt}
+    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
+    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
+      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
+      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
+      BIOSTimerHandler; {this will acknowledge the interrupt}
+    end
+  end;
+end;
 {$F-}
 
 procedure primeNoCard; {Instead of sound blaster, we will use the system timer}
 begin
   play.callproc := soundIntCallerCGA;
   SetTimerExact(@noSoundIntCaller,trunc(PITFreq/realfps)); {set to fire at video's framerate}
+  frameInterval := Chan0Counter;
+end;
+
+procedure primePwm;
+var
+  ticks:word;
+begin
+  {Calc PWM translation table}
+  BuildTrans(header.samplerate);
+
+  {Set PC speaker to PWM mode}
+  InitPCSpkrPWM;
+
+  ticks := trunc(PITFreq div header.samplerate);
+  
+  play.callproc := soundIntCallerCGA;
+  SetTimerExact(@pwmSoundIntCaller,ticks); {set to fire at video's framerate}
+  frameInterval := ticks * header.achunksize;
+end;
+
+procedure primeCvx;
+var
+  ticks:word;
+begin
+  ticks := trunc(PITFreq div header.samplerate);
+
+  play.callproc := soundIntCallerCGA;
+  SetTimerExact(@cvxSoundIntCaller,ticks); {set to fire at video's framerate}
+  frameInterval := ticks * header.achunksize;
 end;
 
 {$IFDEF HP95LX}
@@ -424,7 +524,14 @@ end;
 
 Procedure shutItDown;
 begin
+  if sndDev in [SD_PCSpkr, SD_Covox] then
+    RestorePICState(mt);
+
+  if sndDev = SD_PCSpkr then
+    ResetPCSpkr;
+
   SetIntVec($01C,Int1CSave); {stop counting ticks}
+
 {$IFDEF HP95LX}
   if sndDev = SD_SB
     then exitplay; {shutdown Sound Blaster}
@@ -471,14 +578,32 @@ begin
 end;
 
 begin
+  samples := 1;
+
   prepPlayer;
-  if sndDev = SD_None
+ 
+  if sndDev in [SD_PCSpkr, SD_Covox] then
+  begin
+    {enable Auto-EOI mode}
+    mt := GetMachineType;
+    SetAutoEOI(mt);
+  end;
+
+  case (sndDev) of
+    SD_None:
 {$IFDEF HP95LX}
-    then primeNoCard95LX
+      primeNoCard95LX;
 {$ELSE}
-    then primeNoCard
+      primeNoCard;
 {$ENDIF}
-    else primeSoundcard;
+    SD_PCSpkr:
+	  primePwm;
+	SD_Covox:
+	  primeCvx;
+    SD_SB:
+      primeSoundcard;
+  end;
+  
   xdc_setvid(header.vidmode);
   {if not presenting then writeln('Performing initial buffering...');}
   EnqueueFile;
@@ -487,5 +612,6 @@ begin
     and are just waiting for everything to be played}
     inc(cpuUsageCounter); {record idle time}
   until AVRing.isempty or not dataqueued;
+  
   shutItDown;
 end.

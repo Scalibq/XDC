@@ -22,7 +22,7 @@ begin
 	ppi := ppi or $3;
 	port[PPIPortB] := ppi;
 
-	port[CTCModeCommandReg] := (iMC_Chan2 or iMC_AMlH or iMC_OpMode0 or iMC_BinaryMode);
+	port[CTCModeCommandReg] := (iMC_Chan2 or iMC_AMLB or iMC_OpMode0 or iMC_BinaryMode);
 	port[Chan2Port] := $01;	{ Counter 2 count = 1 - terminate count quickly }
 end;
 
