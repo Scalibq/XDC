@@ -125,7 +125,7 @@ const
   {Want to see those colors sorted by luminance?  Sure thing:}
   RecY709sorted:array[0..15] of byte=(0,1,4,8,5,6,9,12,13,2,3,7,10,11,14,15);
   {sorted by luminance approximatly by composite color output level:}
-  (*RecY709sortedComp:array[0..15] of byte=(0,4,2,8,1,6,$c,$a,5,3,9,$e,7,$d,$b,$f);*)
+  RecY709sortedComp:array[0..15] of byte=(0,4,2,8,1,6,$c,$a,5,3,9,$e,7,$d,$b,$f);
 
   {4 different composite luminance groups with blank between them}
   CompLumaGroups:array[0..17] of byte=(1,2,4,8, 0 , 3,5,6,9,10,12, 0 ,7,11,13,14, 0 ,15);
