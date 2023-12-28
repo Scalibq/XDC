@@ -35,8 +35,10 @@ Procedure jrSetPix160x100(x,y:word;color:byte);
 
 {audio routines}
 Procedure jrInitAudio;       {points PCjr audio multiplexor to 3-voice chip}
-Procedure jrSetAudio(chan:byte;freq:word;volume:byte); {volume is 0-15}
 Procedure jrCloseAudio;      {halts channels, points to 1-voice speaker}
+Procedure jrSetAudio(chan:byte;freq:word;volume:byte); {volume is 0-15}
+procedure jrSetAudioVolume(chan:byte; volume:byte);
+procedure jrSetAudioPeriod(chan:byte; period:byte);
 
 implementation
 
@@ -317,6 +319,19 @@ begin
   end;
 end;
 
+Procedure jrCloseAudio;
+var
+  chan:byte;
+begin
+  for chan:=0 to 3 do jrSetAudio(chan,440,0);
+  {Reset the multiplexor}
+  asm
+    { Audio Multiplexer is Int1A AH=80 AL=Audio source (0=PC speaker, 1=Cassette, 2=I/O channel "Audio In", 3=SN76496) }
+    mov ax, $8000
+    int $1A
+  end;
+end;
+
 Procedure jrSetAudio(chan:byte;freq:word;volume:byte); {volume is 0-15}
 {Sets an SN voice with volume and a desired frequency}
 var
@@ -386,17 +401,32 @@ begin
   end;
 end;
 
-Procedure jrCloseAudio;
+{ Sets an SN voice with volume
+  volume is 0-15 }
+procedure jrSetAudioVolume(chan:byte; volume:byte);
 var
-  chan:byte;
+  command:byte;
 begin
-  for chan:=0 to 3 do jrSetAudio(chan,440,0);
-  {Reset the multiplexor}
-  asm
-    { Audio Multiplexer is Int1A AH=80 AL=Audio source (0=PC speaker, 1=Cassette, 2=I/O channel "Audio In", 3=SN76496) }
-    mov ax, $8000
-    int $1A
-  end;
+  command := chan shl 5;     { get voice reg in place }
+  command := command or $90; { tell chip we're selecting a reg for volume }
+  command := command or volume;         { adjust to attenuation; register expects 0 = full, 15 = quiet }
+  port[SNReg] := command;
+end;
+
+{ Sets an SN voice with volume and a desired frequency
+  volume is 0-15 }
+procedure jrSetAudioPeriod(chan:byte; period:byte);
+var
+  command:byte;
+begin
+  command := chan shl 5; { get voice reg in place }
+  command := command or $80; { tell chip we are selecting a reg }
+  command := command or (period and $F); { grab least sig 4 bits of period... }
+  port[SNReg] := command;
+
+  command := period shr 4;       { isolate upper 6 bits }
+  {command := command and $7F;   { clear bit 7 to indicate rest of freq }
+  port[SNReg] := command;
 end;
 
 end.

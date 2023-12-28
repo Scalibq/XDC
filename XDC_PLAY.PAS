@@ -29,14 +29,16 @@ uses
   I8259A,      {8259A manipulation routines}
   dos,         {for getintvec/setintvec}
   soundlib,    {Sound Blaster detection/setup/init/teardown code}
-  pcspkr;      {PC speaker routines for PWM playback}
+  pcspkr,      {PC speaker routines for PWM playback}
+  PCjrSupport; {Routines for PCjr/Tandy audio}
 
 type
   SoundDevice = (
     SD_None,
     SD_PCSpkr,
     SD_Covox,
-    SD_SB);
+    SD_SB,
+    SD_Tandy);
 
 const
   {samplerate:word=22050;}
@@ -66,6 +68,15 @@ const
   IOUsageTicks:longint=0;
 
   Int1CSave:pointer=nil;
+  
+  { Volume scale for SN76496 used in PCjr and Tandy 1000 }
+  { A drop of 2dB will correspond to a ratio of 10-0.1 = 0.79432823 between the current and previous output values. }
+  { So linear output level of volume V is MAX_OUTPUT*(0.79432823^V) with V in (0..15), 0 being the loudest, and 15 silence. }
+  { In this table, we take MAX_OUTPUT = 32767. }
+  volume_table:array[0..15] of Integer = (
+    32767, 26028, 20675, 16422, 13045, 10362,  8231,  6568,
+     5193,  4125,  3277,  2603,  2067,  1642,  1304,     0
+  );
 
 var
   f:tDosStream;
@@ -93,7 +104,7 @@ begin
 end;
 {$ENDIF}
 
-procedure BuildTrans(rate:word);
+procedure BuildTransPWM(rate:word);
 var
   i: word;
   scale: word;
@@ -105,6 +116,29 @@ begin
   begin
     s := i / 255.0;
     strans[i] := 1 + trunc(s * scale);
+  end;
+end;
+
+{  MAX_OUTPUT*(0.79432823^V) = Y
+   Solve for V:
+   (0.79432823^V) = Y/MAX_OUTPUT
+   V = log(Y/MAX_OUTPUT)/log(0.79432823)
+}
+procedure BuildTransTandy;
+var
+  i: word;
+  iLog:real;
+begin
+  iLog := 1.0/ln(0.79432823);
+  
+  strans[0] := 15 or $90;
+
+  for i := 1 to 255 do
+  begin
+    strans[i] := trunc(ln(i/255.0)*iLog);
+    if (strans[i]) > 15 then
+      strans[i] := 15;
+    strans[i] := strans[i] or $90;
   end;
 end;
 
@@ -121,6 +155,7 @@ begin
         db '  /w         Use PC speaker output',0d0h,0ah
         db '  /c<port>   Use Covox on <port>',0dh,0ah
         db '  /s         Use Sound Blaster',0dh,0ah
+		db '  /t         Use Tandy sound',0d,0ah
         db '  /kN        How much KB to read in a single operation',0dh,0ah
         db '  /p         Presentation mode (no messages, stay in graphics mode)',0dh,0ah
         db '  /d         Displays queue depth indicator',0dh,0ah
@@ -154,6 +189,7 @@ begin
    cvxPort:=StrToInt('$'+p);
   end;
   if is_param('s') then sndDev:=SD_SB;
+  if is_param('t') then sndDev:=SD_Tandy;
   if is_param('k') then minDiskRead:=param_int('k');
   if non_flag_count>0 then fname:=non_flag_param(1);
   if not fileexists(fname) then fatalerror(1,'Filename "'+fname+'" not found');
@@ -167,9 +203,11 @@ begin
       SD_PCSpkr:
         writeln('Using PWM sample playback on PC speaker.');
       SD_Covox:
-        writeln('Using Covox on port ' + hex(cvxPort) + '.');
+        writeln('Using Covox on port ', hex(cvxPort), '.');
       SD_SB:
         writeln('Using Sound Blaster.');
+	  SD_Tandy:
+	    writeln('Using Tandy sound (SN76496).');
     end;
   end;
 
@@ -477,6 +515,31 @@ begin
     end
   end;
 end;
+
+procedure tdySoundIntCaller; Interrupt;
+var
+  sample:byte;
+begin
+  {output one sample to SN76496}
+  sample := audio^;
+  port[SNReg] := strans[sample];
+  inc(audio);
+
+  dec(samples);
+  if samples = 0 then
+  begin
+    samples := header.achunksize;
+    play.callproc;
+	
+    {We want to be nice, and will maintain the BIOS interrupt}
+    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
+    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
+      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
+      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
+      BIOSTimerHandler; {this will acknowledge the interrupt}
+    end
+  end;
+end;
 {$F-}
 
 procedure primeNoCard; {Instead of sound blaster, we will use the system timer}
@@ -491,7 +554,7 @@ var
   ticks:word;
 begin
   {Calc PWM translation table}
-  BuildTrans(header.samplerate);
+  BuildTransPWM(header.samplerate);
 
   {Set PC speaker to PWM mode}
   InitPCSpkrPWM;
@@ -514,6 +577,30 @@ begin
   frameInterval := ticks * header.achunksize;
 end;
 
+procedure primeTandy;
+var
+  ticks:word;
+begin
+  {Calc SN76496 translation table}
+  BuildTransTandy;
+
+  {Enable sample playback on SN76496}
+  jrInitAudio;
+  jrSetAudioPeriod(0,0);
+  jrSetAudioPeriod(1,0);
+  jrSetAudioPeriod(2,0);
+  jrSetAudioVolume(0,15);
+  jrSetAudioVolume(1,15);
+  jrSetAudioVolume(2,15);
+  jrSetAudioVolume(3,15);
+
+  ticks := trunc(PITFreq div header.samplerate);
+  
+  play.callproc := soundIntCallerCGA;
+  SetTimerExact(@tdySoundIntCaller,ticks); {set to fire at video's framerate}
+  frameInterval := ticks * header.achunksize;
+end;
+
 {$IFDEF HP95LX}
 procedure primeNoCard95LX;
 begin
@@ -524,11 +611,20 @@ end;
 
 Procedure shutItDown;
 begin
-  if sndDev in [SD_PCSpkr, SD_Covox] then
+  if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
     RestorePICState(mt);
 
   if sndDev = SD_PCSpkr then
     ResetPCSpkr;
+
+  if sndDev = SD_Tandy then
+  begin
+    jrCloseAudio;
+    jrSetAudio(0,440,0);
+    jrSetAudio(1,440,0);
+    jrSetAudio(2,440,0);
+    jrSetAudioVolume(3,15);
+  end;
 
   SetIntVec($01C,Int1CSave); {stop counting ticks}
 
@@ -582,7 +678,7 @@ begin
 
   prepPlayer;
  
-  if sndDev in [SD_PCSpkr, SD_Covox] then
+  if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
   begin
     {enable Auto-EOI mode}
     mt := GetMachineType;
@@ -597,11 +693,13 @@ begin
       primeNoCard;
 {$ENDIF}
     SD_PCSpkr:
-	  primePwm;
-	SD_Covox:
-	  primeCvx;
+      primePwm;
+    SD_Covox:
+      primeCvx;
     SD_SB:
       primeSoundcard;
+    SD_Tandy:
+      primeTandy;
   end;
   
   xdc_setvid(header.vidmode);
