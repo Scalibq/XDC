@@ -611,9 +611,6 @@ end;
 
 Procedure shutItDown;
 begin
-  if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
-    RestorePICState(mt);
-
   if sndDev = SD_PCSpkr then
     ResetPCSpkr;
 
@@ -636,6 +633,9 @@ begin
     then CleanUpTimer {stop our internal "sound" handler}
   else exitplay; {shutdown Sound Blaster}
 {$ENDIF}
+
+  if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
+    RestorePICState(mt);
 
   if not presenting then begin
     asm
