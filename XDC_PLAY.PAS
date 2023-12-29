@@ -611,18 +611,6 @@ end;
 
 Procedure shutItDown;
 begin
-  if sndDev = SD_PCSpkr then
-    ResetPCSpkr;
-
-  if sndDev = SD_Tandy then
-  begin
-    jrCloseAudio;
-    jrSetAudio(0,440,0);
-    jrSetAudio(1,440,0);
-    jrSetAudio(2,440,0);
-    jrSetAudioVolume(3,15);
-  end;
-
   SetIntVec($01C,Int1CSave); {stop counting ticks}
 
 {$IFDEF HP95LX}
@@ -636,6 +624,18 @@ begin
 
   if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
     RestorePICState(mt);
+
+  if sndDev = SD_PCSpkr then
+    ResetPCSpkr;
+
+  if sndDev = SD_Tandy then
+  begin
+    jrCloseAudio;
+    jrSetAudio(0,440,0);
+    jrSetAudio(1,440,0);
+    jrSetAudio(2,440,0);
+    jrSetAudioVolume(3,15);
+  end;
 
   if not presenting then begin
     asm
