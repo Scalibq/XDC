@@ -128,17 +128,20 @@ procedure BuildTransTandy;
 var
   i: word;
   iLog:real;
+  s: integer;
 begin
-  iLog := 1.0/ln(0.79432823);
+  iLog := 1.0/(ln(0.79432823)/ln(10));
   
   strans[0] := 15 or $90;
 
   for i := 1 to 255 do
   begin
-    strans[i] := trunc(ln(i/255.0)*iLog);
-    if (strans[i]) > 15 then
-      strans[i] := 15;
-    strans[i] := strans[i] or $90;
+    s := trunc((ln(i/255.0)/ln(10))*iLog);
+    if s > 15 then
+      s := 15;
+    if s < 0 then
+	  s := 0;
+    strans[i] := s or $90;
   end;
 end;
 
@@ -586,13 +589,10 @@ begin
 
   {Enable sample playback on SN76496}
   jrInitAudio;
-  jrSetAudioPeriod(0,0);
-  jrSetAudioPeriod(1,0);
-  jrSetAudioPeriod(2,0);
-  jrSetAudioVolume(0,15);
-  jrSetAudioVolume(1,15);
-  jrSetAudioVolume(2,15);
-  jrSetAudioVolume(3,15);
+  jrSetAudio(0, 0, 15);
+  jrSetAudioVolume(1, 15);
+  jrSetAudioVolume(2, 15);
+  jrSetAudioVolume(3, 15);
 
   ticks := trunc(PITFreq div header.samplerate);
   
@@ -631,10 +631,10 @@ begin
   if sndDev = SD_Tandy then
   begin
     jrCloseAudio;
-    jrSetAudio(0,440,0);
-    jrSetAudio(1,440,0);
-    jrSetAudio(2,440,0);
-    jrSetAudioVolume(3,15);
+    jrSetAudio(0, 440, 15);
+    jrSetAudio(1, 440, 15);
+    jrSetAudio(2, 440, 15);
+    jrSetAudioVolume(3, 15);
   end;
 
   if not presenting then begin

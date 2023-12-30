@@ -335,70 +335,19 @@ end;
 Procedure jrSetAudio(chan:byte;freq:word;volume:byte); {volume is 0-15}
 {Sets an SN voice with volume and a desired frequency}
 var
-  period:integer;
+  period:word;
 begin
-  period:=SNFreq div (32*freq);
+  period := 0;
+
+  if (freq <> 0) then
+    period := SNFreq div (32*freq);
   {clamp period so that it doesn't exceed invalid ranges.  This also
   removes the need to strip out bits that would interfere with the
   OR'd command bits sent to the register}
-  if period < 0 then period:=0;
-  period:=(period AND $3ff); {if period > 1023 then period:=1023;}
-
-{
-  To set a channel, we first send frequency, then volume.
-  Frequency:
-  76543210 76543210
-  1                 - set bit to tell chip we are selecting a register
-   xx0              - set channel.  4, 2, and 0 are valid values.
-      xxxx          - low 4 bits of period
-           0        - clear bit to tell chip more freq. coming
-            x       - unused
-             xxxxxx - least sig. 6 bits of period
-
-  Sending a word value will not work on PCjr, so send bytes individally.
-  (It does work on Tandy, but we want to play nice.)
-
-  Set attenuation (volume):
-
-  76543210
-  1                 - set bit to tell chip we are selecting a register
-   xx1              - register number (valid values are 1, 3, 5, 7)
-      xxxx          - 4-bit volume where 0 is full volume and 15 is silent)
-}
-
-  asm
-    {this procedure could be optimized to be either smaller OR faster
-    but I just want to get it working right now}
-    {build MSB}
-    mov     al,chan
-    add     al,al            {voice doubled = register #}
-    mov     cl,4
-    shl     al,cl            {get voice reg in place}
-    or      al,10000000b     {tell chip we are selecting a reg}
-    mov     dx,period        {save period val for later}
-    mov     bx,dx
-    and     bl,00001111b     {grab least sig 4 bits of period...}
-    or      al,bl            {and put them in MSB}
-    out     SNreg,al         {output MSB}
-    {build LSB}
-    mov     bx,dx            {restore original period val}
-    shr     bx,cl            {isolate upper 6 bits}
-    and     bl,01111111b     {clear bit 7 to indicate rest of freq}
-    mov     al,bl
-    out     SNreg,al         {send LSB}
-
-    {set the volume}
-    mov     al,chan
-    shl     al,1
-    or      al,1             {set voice 3 bits to 1, 3, 5, or 7}
-    shl     al,cl            {get voice value into place}
-    or      al,10000000b     {tell chip we're selecting a reg}
-    mov     bl,volume
-    not     bl               {adjust to attenuation; register expects 0 = full, 15 = quiet}
-    and     bl,00001111b     {mask off junk bits}
-    or      al,bl            {merge the volume into the reg select bits}
-    out     SNreg,al         {send volume}
-  end;
+  period := (period AND $3ff);
+  
+  jrSetAudioPeriod(chan, period);
+  jrSetAudioVolume(chan, volume);
 end;
 
 { Sets an SN voice with volume
