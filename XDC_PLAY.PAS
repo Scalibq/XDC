@@ -130,13 +130,13 @@ var
   iLog:real;
   s: integer;
 begin
-  iLog := 1.0/(ln(0.79432823)/ln(10));
+  iLog := 1.0/ln(0.79432823);
   
   strans[0] := 15 or $90;
 
   for i := 1 to 255 do
   begin
-    s := trunc((ln(i/255.0)/ln(10))*iLog);
+    s := trunc(ln(i/255.0)*iLog);
     if s > 15 then
       s := 15;
     if s < 0 then
