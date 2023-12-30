@@ -38,7 +38,7 @@ Procedure jrInitAudio;       {points PCjr audio multiplexor to 3-voice chip}
 Procedure jrCloseAudio;      {halts channels, points to 1-voice speaker}
 Procedure jrSetAudio(chan:byte;freq:word;volume:byte); {volume is 0-15}
 procedure jrSetAudioVolume(chan:byte; volume:byte);
-procedure jrSetAudioPeriod(chan:byte; period:byte);
+procedure jrSetAudioPeriod(chan:byte; period:word);
 
 implementation
 
@@ -413,9 +413,8 @@ begin
   port[SNReg] := command;
 end;
 
-{ Sets an SN voice with volume and a desired frequency
-  volume is 0-15 }
-procedure jrSetAudioPeriod(chan:byte; period:byte);
+{ Sets an SN voice with volume and a desired period }
+procedure jrSetAudioPeriod(chan:byte; period:word);
 var
   command:byte;
 begin
