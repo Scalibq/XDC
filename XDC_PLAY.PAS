@@ -589,7 +589,8 @@ begin
 
   {Enable sample playback on SN76496}
   jrInitAudio;
-  jrSetAudio(0, 0, 15);
+  jrSetAudioPeriod(0, 1);
+  jrSetAudioVolume(0, 15);
   jrSetAudioVolume(1, 15);
   jrSetAudioVolume(2, 15);
   jrSetAudioVolume(3, 15);
