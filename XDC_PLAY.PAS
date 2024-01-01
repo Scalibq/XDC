@@ -269,6 +269,10 @@ begin
     l:=l div 1024;
     writeln('This video could demand as much as ',l,' KB/s from your I/O subsystem.');
     writeln('Will read from disk in ',minDiskRead,'KB chunks.');
+    if header.features and a_pwmdat <> 0 then
+      writeln('Audio encoded for PWM output on PC speaker.');
+    if header.features and a_tdydat <> 0 then
+      writeln('Audio encoded for 4-bit sample output on PCjr/Tandy (SN76496/NCR8496).');
     writeln('Press key to begin playing.');
     readkeychar;
   end;
