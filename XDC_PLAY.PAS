@@ -124,15 +124,18 @@ end;
    (0.79432823^V) = Y/MAX_OUTPUT
    V = log(Y/MAX_OUTPUT)/log(0.79432823)
 }
-procedure BuildTransTandy;
+procedure BuildTransTandy(chan:byte);
 var
   i: word;
   iLog:real;
   s: integer;
 begin
+  chan := chan shl 5;
+  chan := chan or $90;
+  
   iLog := 1.0/ln(0.79432823);
   
-  strans[0] := 15 or $90;
+  strans[0] := 15 or chan;
 
   for i := 1 to 255 do
   begin
@@ -141,7 +144,7 @@ begin
       s := 15;
     if s < 0 then
       s := 0;
-    strans[i] := s or $90;
+    strans[i] := s or chan;
   end;
 end;
 
@@ -633,7 +636,7 @@ var
   ticks:word;
 begin
   {Calc SN76496 translation table}
-  BuildTransTandy;
+  BuildTransTandy(0);
 
   {Enable sample playback on SN76496}
   jrInitAudio;
