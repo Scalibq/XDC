@@ -34,8 +34,8 @@ feature byte, currently unused:
 |||||||+--a_compm1     If set, audio data is compressed using method 1 (DPCM)
 ||||||+---a_compm2     If set, audio data is compressed using method 2 (VQ)
 |||||+----a_stereo     If set, audio data is stereo (LRLR)
-||||+-----reserved
-|||+------reserved
+||||+-----a_pwmdat     If set, audio data is pre-translated to PWM values for PC speaker
+|||+------a_tdydat     If set, audio data is pre-translated to 4-bit volume values for the PCjr/Tandy sound chip (SN76496)
 ||+-------reserved
 |+--------reserved
 +---------reserved
@@ -75,6 +75,13 @@ from disk for each packet.
 interface
 
 const
+  {feature byte flags}
+  a_compm1 = $01;
+  a_compm2 = $02;
+  a_stereo = $04;
+  a_pwmdat = $08;
+  a_tdydat = $10;
+  
   debug:byte=1;               {debug level, higher values increase verbosity}
   maxbuf=65536-16;
   secsize=512;                {size of a disk sector

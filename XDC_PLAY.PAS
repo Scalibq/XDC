@@ -140,7 +140,7 @@ begin
     if s > 15 then
       s := 15;
     if s < 0 then
-	  s := 0;
+      s := 0;
     strans[i] := s or $90;
   end;
 end;
@@ -158,7 +158,7 @@ begin
         db '  /w         Use PC speaker output',0d0h,0ah
         db '  /c<port>   Use Covox on <port>',0dh,0ah
         db '  /s         Use Sound Blaster',0dh,0ah
-		db '  /t         Use Tandy sound',0d,0ah
+        db '  /t         Use Tandy sound',0d,0ah
         db '  /kN        How much KB to read in a single operation',0dh,0ah
         db '  /p         Presentation mode (no messages, stay in graphics mode)',0dh,0ah
         db '  /d         Displays queue depth indicator',0dh,0ah
@@ -209,8 +209,8 @@ begin
         writeln('Using Covox on port ', hex(cvxPort), '.');
       SD_SB:
         writeln('Using Sound Blaster.');
-	  SD_Tandy:
-	    writeln('Using Tandy sound (SN76496).');
+      SD_Tandy:
+        writeln('Using Tandy sound (SN76496).');
     end;
   end;
 
@@ -318,8 +318,8 @@ begin
     inc(word(audioHp),(packetIndex^[curPlayPacket]*512)-header.achunksize);
     audio := audioHp;
 
-	{enable interrupts at this point}
-	asm sti end;
+    {enable interrupts at this point}
+    asm sti end;
 
     if sndDev = SD_SB then begin
       asm
@@ -476,7 +476,7 @@ procedure pwmSoundIntCaller; Interrupt;
 var
   sample:byte;
 begin
-  {output one sample to PC speaker}
+  {output one 8-bit PCM sample to PC speaker}
   sample := audio^;
   port[Chan2Port] := strans[sample];
   inc(audio);
@@ -486,7 +486,7 @@ begin
   begin
     samples := header.achunksize;
     play.callproc;
-	
+
     {We want to be nice, and will maintain the BIOS interrupt}
     inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
     if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
@@ -497,9 +497,32 @@ begin
   end;
 end;
 
+procedure tpwmSoundIntCaller; Interrupt;
+begin
+  {output one pre-translated sample to PC speaker}
+  port[Chan2Port] := audio^;
+  inc(audio);
+
+  dec(samples);
+  if samples = 0 then
+  begin
+    samples := header.achunksize;
+    play.callproc;
+
+    {We want to be nice, and will maintain the BIOS interrupt}
+    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
+    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
+      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
+      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
+      BIOSTimerHandler; {this will acknowledge the interrupt}
+    end
+  end;
+end;
+
+
 procedure cvxSoundIntCaller; Interrupt;
 begin
-  {output one sample to Covox via printer port}
+  {output one 8-bit PCM sample to Covox via printer port}
   port[cvxPort] := audio^;
   inc(audio);
 
@@ -508,7 +531,7 @@ begin
   begin
     samples := header.achunksize;
     play.callproc;
-	
+
     {We want to be nice, and will maintain the BIOS interrupt}
     inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
     if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
@@ -523,7 +546,7 @@ procedure tdySoundIntCaller; Interrupt;
 var
   sample:byte;
 begin
-  {output one sample to SN76496}
+  {output one 8-bit PCM sample to SN76496}
   sample := audio^;
   port[SNReg] := strans[sample];
   inc(audio);
@@ -533,7 +556,29 @@ begin
   begin
     samples := header.achunksize;
     play.callproc;
-	
+
+    {We want to be nice, and will maintain the BIOS interrupt}
+    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
+    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
+      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
+      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
+      BIOSTimerHandler; {this will acknowledge the interrupt}
+    end
+  end;
+end;
+
+procedure ttdySoundIntCaller; Interrupt;
+begin
+  {output one pre-translated sample to SN76496}
+  port[SNReg] := audio^;
+  inc(audio);
+
+  dec(samples);
+  if samples = 0 then
+  begin
+    samples := header.achunksize;
+    play.callproc;
+
     {We want to be nice, and will maintain the BIOS interrupt}
     inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
     if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
@@ -563,9 +608,12 @@ begin
   InitPCSpkrPWM;
 
   ticks := trunc(PITFreq div header.samplerate);
-  
+
   play.callproc := soundIntCallerCGA;
-  SetTimerExact(@pwmSoundIntCaller,ticks); {set to fire at video's framerate}
+  if header.features and a_pwmdat <> 0 then
+    SetTimerExact(@tpwmSoundIntCaller,ticks) {set to fire at video's framerate}
+  else
+    SetTimerExact(@pwmSoundIntCaller,ticks); {set to fire at video's framerate}
   frameInterval := ticks * header.achunksize;
 end;
 
@@ -596,9 +644,12 @@ begin
   jrSetAudioVolume(3, 15);
 
   ticks := trunc(PITFreq div header.samplerate);
-  
+
   play.callproc := soundIntCallerCGA;
-  SetTimerExact(@tdySoundIntCaller,ticks); {set to fire at video's framerate}
+  if header.features and a_tdydat <> 0 then
+    SetTimerExact(@ttdySoundIntCaller,ticks) {set to fire at video's framerate}
+  else
+    SetTimerExact(@tdySoundIntCaller,ticks); {set to fire at video's framerate}
   frameInterval := ticks * header.achunksize;
 end;
 
