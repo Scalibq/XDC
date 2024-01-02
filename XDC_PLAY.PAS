@@ -579,6 +579,7 @@ asm
 
   pop ds
   pop si
+  pop dx
   pop ax
   iret
 
