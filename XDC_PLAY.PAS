@@ -86,9 +86,9 @@ var
   fname:string;
   cvxPort:word;
   mt:MachineType;
+  samples:word;
   frameInterval:word;
   audioHp:^byte; {pointer to audio}
-  audioEnd:pointer; {end of audio chunk}
   strans: array [0..255] of byte;
 
 procedure userTickHandler; interrupt;
@@ -320,10 +320,8 @@ begin
     {get a handle to the packet}
     frameHp:=AVRing.retrieve;
     {get a handle to the audio data inside the packet}
-    audioEnd:=frameHp;
-    inc(word(audioEnd),(packetIndex^[curPlayPacket]*512));
-    audioHp:=audioEnd;
-    dec(word(audioHp),header.achunksize);
+    audioHp:=frameHp;
+    inc(word(audioHp),(packetIndex^[curPlayPacket]*512)-header.achunksize);
 
     {enable interrupts at this point}
     asm sti end;
@@ -465,6 +463,7 @@ end;
 
 procedure CallFrame;
 begin
+  samples := header.achunksize;
   play.callproc;
 
   {We want to be nice, and will maintain the BIOS interrupt}
@@ -501,7 +500,8 @@ begin
   port[Chan2Port] := strans[sample];
   inc(audioHp);
 
-  if word(audioHp) >= word(audioEnd) then
+  dec(samples);
+  if samples = 0 then
     CallFrame;
 end;
 
@@ -523,8 +523,8 @@ asm
   pop ds
   mov word ptr [audioHp], si
 
-  cmp si, word ptr [audioEnd]
-  jae @nextFrame
+  dec [samples]
+  jz @nextFrame
 
   pop ds
   pop si
@@ -572,8 +572,8 @@ asm
   out dx, al
   mov word ptr [audioHp], si
 
-  cmp si, word ptr [audioEnd]
-  jae @nextFrame
+  dec [samples]
+  jz @nextFrame
 
   pop ds
   pop si
@@ -586,9 +586,9 @@ asm
   push cx
   push di
   push es
-  
+
   call CallFrame
-  
+
   pop es
   pop di
   pop cx
@@ -610,7 +610,8 @@ begin
   port[SNReg] := strans[sample];
   inc(audioHp);
 
-  if word(audioHp) >= word(audioEnd) then
+  dec(samples);
+  if samples = 0 then
     CallFrame;
 end;
 
@@ -632,8 +633,8 @@ asm
   pop ds
   mov word ptr [audioHp], si
 
-  cmp si, word ptr [audioEnd]
-  jae @nextFrame
+  dec [samples]
+  jz @nextFrame
 
   pop ds
   pop si
@@ -648,7 +649,7 @@ asm
   push es
   
   call CallFrame
-  
+
   pop es
   pop di
   pop dx
@@ -798,8 +799,10 @@ begin
 end;
 
 begin
+  samples := 1;
+
   prepPlayer;
- 
+
   if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
   begin
     {enable Auto-EOI mode}
