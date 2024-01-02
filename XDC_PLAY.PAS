@@ -86,9 +86,9 @@ var
   fname:string;
   cvxPort:word;
   mt:MachineType;
-  samples:word;
   frameInterval:word;
   audioHp:^byte; {pointer to audio}
+  audioEnd:pointer; {end of audio chunk}
   strans: array [0..255] of byte;
 
 procedure userTickHandler; interrupt;
@@ -294,24 +294,6 @@ var
   frameHp:pointer;    {temp pointer video data comes from}
 
 begin
-  if sndDev = SD_SB then begin
-    sndbufp:=play.p; {point to dma buffer}
-    if play.activeblock = 2 {If in one half, advance to the second half}
-      then inc(word(sndbufp),header.achunksize);
-  end;
-{$IFNDEF HP95LX}
-  {if requested, display a blinking pip onscreen showing queue depth}
-  if showpip then asm
-        mov     ax,$b800
-        mov     es,ax
-        mov     di,AVRing.numElements
-        mov     cl,3
-        shr     di,cl
-        mov     ax,di
-        or      ax,1000000000000001b
-        stosw
-  end;
-{$ENDIF}
   if AVRing.isEmpty then begin
     if dataQueued then inc(numPauses);
     dataQueued:=false;
@@ -320,13 +302,20 @@ begin
     {get a handle to the packet}
     frameHp:=AVRing.retrieve;
     {get a handle to the audio data inside the packet}
-    audioHp:=frameHp;
-    inc(word(audioHp),(packetIndex^[curPlayPacket]*512)-header.achunksize);
+    audioEnd:=frameHp;
+    inc(word(audioEnd),packetIndex^[curPlayPacket]*512);
+    audioHp:=audioEnd;
+    dec(word(audioHp),header.achunksize);
 
     {enable interrupts at this point}
     asm sti end;
 
-    if sndDev = SD_SB then begin
+    if sndDev = SD_SB then
+    begin
+      sndbufp:=play.p; {point to dma buffer}
+      if play.activeblock = 2 {If in one half, advance to the second half}
+        then inc(word(sndbufp),header.achunksize);
+
       asm
         mov     dx,ds
         les     di,sndbufp
@@ -352,7 +341,24 @@ begin
         mov     al,$7f   {fill buffer with silence if we have nothing to put in it}
         rep     stosb
     end;
+  end else begin
+    { Quick and dirty workaround for buffer underruns }
+    audioHp := pointer(0);
+    audioEnd := pointer(65535);
   end;
+  {$IFNDEF HP95LX}
+  {if requested, display a blinking pip onscreen showing queue depth}
+  if showpip then asm
+        mov     ax,$b800
+        mov     es,ax
+        mov     di,AVRing.numElements
+        mov     cl,3
+        shr     di,cl
+        mov     ax,di
+        or      ax,1000000000000001b
+        stosw
+  end;
+{$ENDIF}
   {toggle sound double-buffer blocks}
   asm
         xor     play.activeblock,00000011b {toggles between 1 and 2}
@@ -463,7 +469,6 @@ end;
 
 procedure CallFrame;
 begin
-  samples := header.achunksize;
   play.callproc;
 
   {We want to be nice, and will maintain the BIOS interrupt}
@@ -500,8 +505,7 @@ begin
   port[Chan2Port] := strans[sample];
   inc(audioHp);
 
-  dec(samples);
-  if samples = 0 then
+  if word(audioHp) >= word(audioEnd) then
     CallFrame;
 end;
 
@@ -523,8 +527,8 @@ asm
   pop ds
   mov word ptr [audioHp], si
 
-  dec [samples]
-  jz @nextFrame
+  cmp si, word ptr [audioEnd]
+  jae @nextFrame
 
   pop ds
   pop si
@@ -572,8 +576,8 @@ asm
   out dx, al
   mov word ptr [audioHp], si
 
-  dec [samples]
-  jz @nextFrame
+  cmp si, word ptr [audioEnd]
+  jae @nextFrame
 
   pop ds
   pop si
@@ -586,9 +590,9 @@ asm
   push cx
   push di
   push es
-
+  
   call CallFrame
-
+  
   pop es
   pop di
   pop cx
@@ -610,8 +614,7 @@ begin
   port[SNReg] := strans[sample];
   inc(audioHp);
 
-  dec(samples);
-  if samples = 0 then
+  if word(audioHp) >= word(audioEnd) then
     CallFrame;
 end;
 
@@ -633,8 +636,8 @@ asm
   pop ds
   mov word ptr [audioHp], si
 
-  dec [samples]
-  jz @nextFrame
+  cmp si, word ptr [audioEnd]
+  jae @nextFrame
 
   pop ds
   pop si
@@ -649,7 +652,7 @@ asm
   push es
   
   call CallFrame
-
+  
   pop es
   pop di
   pop dx
@@ -799,10 +802,8 @@ begin
 end;
 
 begin
-  samples := 1;
-
   prepPlayer;
-
+ 
   if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
   begin
     {enable Auto-EOI mode}
