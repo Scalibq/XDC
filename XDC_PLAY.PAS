@@ -463,6 +463,20 @@ begin
   if not presenting then writeln(getblasterstring,' initialized.');
 end;
 
+procedure CallFrame;
+begin
+  samples := header.achunksize;
+  play.callproc;
+
+  {We want to be nice, and will maintain the BIOS interrupt}
+  inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
+  if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
+    longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
+    asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
+    BIOSTimerHandler; {this will acknowledge the interrupt}
+  end
+end;
+
 {$F+}
 procedure noSoundIntCaller; Interrupt;
 begin
@@ -490,63 +504,102 @@ begin
 
   dec(samples);
   if samples = 0 then
-  begin
-    samples := header.achunksize;
-    play.callproc;
-
-    {We want to be nice, and will maintain the BIOS interrupt}
-    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
-    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
-      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
-      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
-      BIOSTimerHandler; {this will acknowledge the interrupt}
-    end
-  end;
+    CallFrame;
 end;
 
-procedure tpwmSoundIntCaller; Interrupt;
-begin
+procedure tpwmSoundIntCaller; Assembler;
+asm
+  push ax
+  push si
+  push ds
+
+  mov ax, seg audio
+  push ax
+  mov ds, ax
+
   {output one pre-translated sample to PC speaker}
-  port[Chan2Port] := audio^;
-  inc(audio);
+  lds si, [audio]
+  lodsb
+  out Chan2Port, al
 
-  dec(samples);
-  if samples = 0 then
-  begin
-    samples := header.achunksize;
-    play.callproc;
+  pop ds
+  mov word ptr [audio], si
 
-    {We want to be nice, and will maintain the BIOS interrupt}
-    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
-    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
-      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
-      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
-      BIOSTimerHandler; {this will acknowledge the interrupt}
-    end
-  end;
+  dec [samples]
+  jz @nextFrame
+
+  pop ds
+  pop si
+  pop ax
+  iret
+
+@nextFrame:
+  push bx
+  push cx
+  push dx
+  push di
+  push es
+  
+  call CallFrame
+  
+  pop es
+  pop di
+  pop dx
+  pop cx
+  pop bx
+
+  pop ds
+  pop si
+  pop ax
+  iret
 end;
 
+procedure cvxSoundIntCaller; Assembler;
+asm
+  push ax
+  push dx
+  push si
+  push ds
 
-procedure cvxSoundIntCaller; Interrupt;
-begin
+  mov ax, seg audio
+  mov dx, [CvxPort]
+
+  push ax
+  mov ds, ax
+
   {output one 8-bit PCM sample to Covox via printer port}
-  port[cvxPort] := audio^;
-  inc(audio);
+  lds si, [audio]
+  lodsb
+  pop ds
+  out dx, al
+  mov word ptr [audio], si
 
-  dec(samples);
-  if samples = 0 then
-  begin
-    samples := header.achunksize;
-    play.callproc;
+  dec [samples]
+  jz @nextFrame
 
-    {We want to be nice, and will maintain the BIOS interrupt}
-    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
-    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
-      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
-      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
-      BIOSTimerHandler; {this will acknowledge the interrupt}
-    end
-  end;
+  pop ds
+  pop si
+  pop ax
+  iret
+
+@nextFrame:
+  push bx
+  push cx
+  push di
+  push es
+  
+  call CallFrame
+  
+  pop es
+  pop di
+  pop cx
+  pop bx
+
+  pop ds
+  pop si
+  pop dx
+  pop ax
+  iret
 end;
 
 procedure tdySoundIntCaller; Interrupt;
@@ -560,40 +613,54 @@ begin
 
   dec(samples);
   if samples = 0 then
-  begin
-    samples := header.achunksize;
-    play.callproc;
-
-    {We want to be nice, and will maintain the BIOS interrupt}
-    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
-    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
-      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
-      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
-      BIOSTimerHandler; {this will acknowledge the interrupt}
-    end
-  end;
+    CallFrame;
 end;
 
-procedure ttdySoundIntCaller; Interrupt;
-begin
+procedure ttdySoundIntCaller; Assembler;
+asm
+  push ax
+  push si
+  push ds
+
+  mov ax, seg audio
+  push ax
+  mov ds, ax
+
   {output one pre-translated sample to SN76496}
-  port[SNReg] := audio^;
-  inc(audio);
+  lds si, [audio]
+  lodsb
+  out SNReg, al
 
-  dec(samples);
-  if samples = 0 then
-  begin
-    samples := header.achunksize;
-    play.callproc;
+  pop ds
+  mov word ptr [audio], si
 
-    {We want to be nice, and will maintain the BIOS interrupt}
-    inc(PITCycles,frameInterval); {Keep track of how many PIT cycles have gone by}
-    if longrec(PITCycles).hi <> 0 then begin {Did we roll over?  Is it time to call the 18.2Hz BIOS handler?}
-      longrec(PITCycles).hi:=0; {Update our PIT cycles counter}
-      asm pushf end; {simulate an interrupt by pushing flags, then CALLing handler}
-      BIOSTimerHandler; {this will acknowledge the interrupt}
-    end
-  end;
+  dec [samples]
+  jz @nextFrame
+
+  pop ds
+  pop si
+  pop ax
+  iret
+
+@nextFrame:
+  push bx
+  push cx
+  push dx
+  push di
+  push es
+  
+  call CallFrame
+  
+  pop es
+  pop di
+  pop dx
+  pop cx
+  pop bx
+
+  pop ds
+  pop si
+  pop ax
+  iret
 end;
 {$F-}
 
