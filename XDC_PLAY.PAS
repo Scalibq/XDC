@@ -86,9 +86,9 @@ var
   fname:string;
   cvxPort:word;
   mt:MachineType;
-  samples:word;
   frameInterval:word;
-  audio:^byte;
+  audioHp:^byte; {pointer to audio}
+  audioEnd:pointer; {end of audio chunk}
   strans: array [0..255] of byte;
 
 procedure userTickHandler; interrupt;
@@ -292,7 +292,6 @@ the parent code in the soundblaster and interrupt routines do that for us.
 var
   sndBufp:pointer;    {temp pointer to where we should copy our new audio data}
   frameHp:pointer;    {temp pointer video data comes from}
-  audioHp:pointer;    {pointer to audio}
 
 begin
   if sndDev = SD_SB then begin
@@ -321,9 +320,10 @@ begin
     {get a handle to the packet}
     frameHp:=AVRing.retrieve;
     {get a handle to the audio data inside the packet}
-    audioHp:=frameHp;
-    inc(word(audioHp),(packetIndex^[curPlayPacket]*512)-header.achunksize);
-    audio := audioHp;
+    audioEnd:=frameHp;
+    inc(word(audioEnd),(packetIndex^[curPlayPacket]*512));
+    audioHp:=audioEnd;
+    dec(word(audioHp),header.achunksize);
 
     {enable interrupts at this point}
     asm sti end;
@@ -465,7 +465,6 @@ end;
 
 procedure CallFrame;
 begin
-  samples := header.achunksize;
   play.callproc;
 
   {We want to be nice, and will maintain the BIOS interrupt}
@@ -498,12 +497,11 @@ var
   sample:byte;
 begin
   {output one 8-bit PCM sample to PC speaker}
-  sample := audio^;
+  sample := audioHp^;
   port[Chan2Port] := strans[sample];
-  inc(audio);
+  inc(audioHp);
 
-  dec(samples);
-  if samples = 0 then
+  if word(audioHp) >= word(audioEnd) then
     CallFrame;
 end;
 
@@ -513,20 +511,20 @@ asm
   push si
   push ds
 
-  mov ax, seg audio
+  mov ax, seg audioHp
   push ax
   mov ds, ax
 
   {output one pre-translated sample to PC speaker}
-  lds si, [audio]
+  lds si, [audioHp]
   lodsb
   out Chan2Port, al
 
   pop ds
-  mov word ptr [audio], si
+  mov word ptr [audioHp], si
 
-  dec [samples]
-  jz @nextFrame
+  cmp si, word ptr [audioEnd]
+  jae @nextFrame
 
   pop ds
   pop si
@@ -561,21 +559,21 @@ asm
   push si
   push ds
 
-  mov ax, seg audio
+  mov ax, seg audioHp
   mov dx, [CvxPort]
 
   push ax
   mov ds, ax
 
   {output one 8-bit PCM sample to Covox via printer port}
-  lds si, [audio]
+  lds si, [audioHp]
   lodsb
   pop ds
   out dx, al
-  mov word ptr [audio], si
+  mov word ptr [audioHp], si
 
-  dec [samples]
-  jz @nextFrame
+  cmp si, word ptr [audioEnd]
+  jae @nextFrame
 
   pop ds
   pop si
@@ -608,12 +606,11 @@ var
   sample:byte;
 begin
   {output one 8-bit PCM sample to SN76496}
-  sample := audio^;
+  sample := audioHp^;
   port[SNReg] := strans[sample];
-  inc(audio);
+  inc(audioHp);
 
-  dec(samples);
-  if samples = 0 then
+  if word(audioHp) >= word(audioEnd) then
     CallFrame;
 end;
 
@@ -623,20 +620,20 @@ asm
   push si
   push ds
 
-  mov ax, seg audio
+  mov ax, seg audioHp
   push ax
   mov ds, ax
 
   {output one pre-translated sample to SN76496}
-  lds si, [audio]
+  lds si, [audioHp]
   lodsb
   out SNReg, al
 
   pop ds
-  mov word ptr [audio], si
+  mov word ptr [audioHp], si
 
-  dec [samples]
-  jz @nextFrame
+  cmp si, word ptr [audioEnd]
+  jae @nextFrame
 
   pop ds
   pop si
@@ -801,8 +798,6 @@ begin
 end;
 
 begin
-  samples := 1;
-
   prepPlayer;
  
   if sndDev in [SD_PCSpkr, SD_Covox, SD_Tandy] then
