@@ -1,3 +1,18 @@
+This is a fork of the original XDC video encoder and decoder for 8088-based
+PCs with a CGA card, running MS-DOS, by MobyGamer aka Trixter/Hornet.
+
+This fork adds support for various sound devices:
+- PC speaker
+- Covox Speech Thing
+- Tandy/PCjr sound chip
+- Sound Blaster 1.x
+
+The support files from MobyGamer/TPLibs and MobyGamer/UNITS are already
+included, so the code should build as-is.
+
+Original README below:
+======================
+
 XDC
 ===
 
